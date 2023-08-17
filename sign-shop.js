@@ -6,13 +6,13 @@ const { extractPlaceID, writeToFile } = require('./inc/helpers');
 const { autoScrollMap } = require('./inc/auto-scroll');
 const getContactLinks = require('./inc/get-contact-links');
 const searchEmails = require('./inc/email-helpers');
-const filename = 'canada-states.csv';
+const filename = 'west-coast.csv';
 
 const CONFIG = {
     mapUrl: 'https://www.google.com/maps/search/',
-    query: 'interior designer',
+    query: 'sign shop',
     inputFilename: filename,
-    outputFilename: `./output/output-${filename}`,
+    outputFilename: `./output/sign-shop-${filename}`,
     processedZipsFile: 'processedZips.txt'
 };
 
@@ -27,7 +27,7 @@ async function loadprocessedZips() {
     }
 }
 
-async function openPuppeteer(url) {
+async function openPuppeteer(url, queryText) {
     let browser = null;
 	let chromeTmpDataDir = null;
     try {
@@ -53,7 +53,7 @@ async function openPuppeteer(url) {
         await page.setViewport({ width: 1200, height: 3000 });
         await page.goto(url, { waitUntil: 'networkidle0' });
 
-        const results = await parsePlaces( page );
+        const results = await parsePlaces( page, queryText );
         
         console.log('===================ParsePlaces================');
 
@@ -82,8 +82,22 @@ async function openPuppeteer(url) {
 }
 
 
-async function parsePlaces(page) {
+async function parsePlaces(page, queryText) {
     let links;
+
+	await page.waitForSelector('#searchboxinput');
+
+	const searchInput = await page.$('#searchboxinput');
+
+	await searchInput.click({ clickCount: 3 })
+
+	await searchInput.type('sign shop ' + queryText );
+
+	await page.keyboard.press('Enter');
+
+	await page.waitForNavigation();
+
+	await page.waitForSelector('[role="feed"]');
 
     const hasFeed = await page.evaluate(() => {
         const feed = document.querySelector('[role="feed"]');
@@ -110,7 +124,7 @@ async function parsePlaces(page) {
 
 async function getPlacesData( links ) {
 
-	const query = "interior designer";
+	const query = "sign shop";
 
 	console.log('Found ' + links.length + ' places');
 
@@ -284,11 +298,13 @@ async function startProcess() {
 		for (let i = 0; i < rows.length; i++) {
 			try {
 				const row = rows[i].split(',');
-				const state = row[0].trim();
+				const zip = row[0].trim();
+				const city = row[1].trim();
+				const state = row[2].trim();
 
 				// If the zip has been processed before, skip it
-				if (processedZips.has(state) ) {
-					console.log( 'State done. Skipping..');
+				if (processedZips.has(zip) ) {
+					console.log( 'Zipcode done. Skipping..');
 					continue;
 				}
 
@@ -296,27 +312,26 @@ async function startProcess() {
 					continue;
 				}
 
-				const lat = row[1].trim();
-				const lang = row[2].trim();
-				const queryText = CONFIG.query.replace(' ', '+');
+				const queryText = zip + ',' + city + ',' + state;
+				// const searchUrl =
+				// 	CONFIG.mapUrl +
+				// 	queryText.replace(' ', '+') +
+				// 	'+in+' + city +
+				// 	',' + state;
+
 				const searchUrl =
 					CONFIG.mapUrl +
-					queryText.replace(' ', '+') +
-					'+in+' + state +
-					'/@' +
-					lat +
-					',' +
-					lang +
-					',13z/data=!4m2!2m1!6e6?entry=ttu';
+					zip + ',' + city +
+					',' + state;
 					
 				console.log(searchUrl);
 
-				await openPuppeteer(searchUrl);
+				await openPuppeteer(searchUrl, queryText);
 
 				// Add the zip to the set of processed zips
-				processedZips.add(state);
+				processedZips.add(zip);
 				// Append the zip to the processedZipsFile
-				fs.appendFile(CONFIG.processedZipsFile, state + '\n', (err) => {
+				fs.appendFile(CONFIG.processedZipsFile, zip + '\n', (err) => {
 					if (err) {
 						console.error('Error writing to file:', err);
 					}
